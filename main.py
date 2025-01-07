@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 import os
 
@@ -126,6 +127,7 @@ def restart_service():
         win32serviceutil.RestartService('Vpos')
     except Exception as e:
         return jsonify({'status': 'OK', 'message': str(e)})
+    time.sleep(10)
 
     return jsonify({'status': 'OK'})
 
