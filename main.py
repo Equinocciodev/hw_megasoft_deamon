@@ -123,7 +123,7 @@ def get_lasts_txt():
 def restart_service():
     try:
         import win32serviceutil
-        win32serviceutil.RestartService('AnyDesk')
+        win32serviceutil.RestartService('Vpos')
     except Exception as e:
         return jsonify({'status': 'OK', 'message': str(e)})
 
