@@ -1,7 +1,7 @@
 import time
 from datetime import datetime
 import os
-
+import subprocess
 from flask import Flask, jsonify, request, render_template, send_from_directory
 from flask_cors import CORS
 
@@ -33,7 +33,6 @@ def get_txt_file():
 
 @app.route('/api/check_txt_file', methods=['POST'])
 def check_txt_file():
-
     form = request.form.copy()
     folder_path = request.json['pathToTxt']
     # Obtener lista de archivos en la carpeta remota
@@ -122,14 +121,15 @@ def get_lasts_txt():
 
 @app.route('/api/restart_service', methods=['POST'])
 def restart_service():
-    try:
-        import win32serviceutil
-        win32serviceutil.RestartService('Vpos')
-    except Exception as e:
-        return jsonify({'status': 'OK', 'message': str(e)})
-    time.sleep(10)
+    return jsonify({'status': 'error', 'message': 'Contacte a soporte.'})
+    # try:
+    #     import win32serviceutil
+    #     subprocess.run(['cscript.exe', 'path_to_your_script.vbs'])
+    # except Exception as e:
+    #     return jsonify({'status': 'error', 'message': str(e)})
+    # time.sleep(10)
 
-    return jsonify({'status': 'OK'})
+    # return jsonify({'status': 'OK'})
 
 
 
