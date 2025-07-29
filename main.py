@@ -121,15 +121,30 @@ def get_lasts_txt():
 
 @app.route('/api/restart_service', methods=['POST'])
 def restart_service():
-    return jsonify({'status': 'error', 'message': 'Contacte a soporte.'})
-    # try:
-    #     import win32serviceutil
-    #     subprocess.run(['cscript.exe', 'path_to_your_script.vbs'])
-    # except Exception as e:
-    #     return jsonify({'status': 'error', 'message': str(e)})
-    # time.sleep(10)
+    try:
+        # Intentar detener la tarea programada si está corriendo
+        subprocess.run(['schtasks', '/end', '/tn', 'RestartVposREST'], capture_output=True, text=True, shell=True)
+        
+        # Terminate javaw.exe directly using taskkill
+        subprocess.run(['taskkill', '/F', '/IM', 'javaw.exe'], capture_output=True, text=True, shell=True)
+        
+        # Esperar un momento para asegurar que el proceso termine
+        time.sleep(2)
 
-    # return jsonify({'status': 'OK'})
+        # Ejecutar la tarea programada RestartVposREST para iniciar RestartVposREST
+        result = subprocess.run(['schtasks', '/run', '/tn', 'RestartVposREST'], capture_output=True, text=True, check=True)
+        
+         
+        # Verificar que la tarea se ejecutó correctamente
+        if result.returncode == 0:
+            return jsonify({'status': 'OK', 'message': 'Servicio reiniciado correctamente.'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Error al iniciar la tarea programada.'})
+            
+    except subprocess.CalledProcessError as e:
+        return jsonify({'status': 'error', 'message': f'Error al ejecutar el script: {e.stderr}'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error inesperado: {str(e)}'})
 
 
 
