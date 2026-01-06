@@ -24,7 +24,8 @@ def api():
 def get_txt_file():
     form = request.form.copy()
     local_file=open(request.json['pathToTxt'], 'r')
-    data_to_send = ["80 " + line.strip('\n') for line in local_file.readlines()]
+    data_to_send = ["800" + line.strip('\n') for line in local_file.readlines()]
+    data_to_send.append("810Fin del documento.")
     local_file.close()
     print(data_to_send)
     print(jsonify(data_to_send))
@@ -50,13 +51,43 @@ def check_txt_file():
 
     # Abrir el archivo TXT y leer su contenido
     remote_file = open(txt_file_path, 'r')
-    data_to_send = ["80 " + line.strip('\n') for line in remote_file.readlines()]
+    data_to_send = ["800" + line.strip('\n') for line in remote_file.readlines()]
+    data_to_send.append("810Fin del documento.")
     remote_file.close()
 
     return jsonify({
         'exists': bool(data_to_send),
         'data': data_to_send
     })
+
+@app.route('/api/check_last_txt_file', methods=['POST'])
+def check_last_txt_file():
+    form = request.form.copy()
+    folder_path = request.json['pathToTxt']
+    # Obtener lista de archivos en la carpeta
+    files_in_folder = os.listdir(folder_path)
+
+    # Filtrar archivos que sean archivos de texto
+    txt_files = [file for file in files_in_folder if file.endswith('.txt')]
+
+    if not txt_files:
+        return jsonify({'status': 'error', 'message': 'No se encontró ningún archivo TXT en la carpeta.'})
+
+    # Obtener el archivo .txt más reciente por fecha de modificación
+    last_txt_file = max(txt_files, key=lambda x: os.path.getmtime(os.path.join(folder_path, x)))
+    txt_file_path = os.path.join(folder_path, last_txt_file)
+
+    # Abrir el archivo TXT y leer su contenido
+    with open(txt_file_path, 'r') as remote_file:
+        data_to_send = ["800" + line.strip('\n') for line in remote_file.readlines()]
+        data_to_send.append("810Fin del documento.")
+
+    return jsonify({
+        'exists': bool(data_to_send),
+        'data': data_to_send,
+        'file_name': last_txt_file
+    })
+
 @app.route('/api/clear_txt_file', methods=['POST'])
 def clear_txt_file():
     form = request.form.copy()
@@ -110,7 +141,8 @@ def get_lasts_txt():
         file_path = os.path.join(backup_folder_path, file)
         modification_time = os.path.getmtime(file_path)
         with open(file_path, 'r') as f:
-            commands = ["80 " + line.strip('\n') for line in f.readlines()]
+            commands = ["800" + line.strip('\n') for line in f.readlines()]
+            commands.append("810Fin del documento.")
         result.append({
             'file_name': file,
             'date': datetime.fromtimestamp(modification_time).strftime('%Y-%m-%d %H:%M:%S'),
