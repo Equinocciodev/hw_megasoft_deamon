@@ -48,12 +48,22 @@ def check_txt_file():
 
     # Construir la ruta completa del archivo TXT
     txt_file_path = os.path.join(folder_path, txt_files[0])
-
+    data_to_send = []
+    
     # Abrir el archivo TXT y leer su contenido
-    remote_file = open(txt_file_path, 'r')
-    data_to_send = ["800" + line.strip('\n') for line in remote_file.readlines()]
-    data_to_send.append("810Fin del documento.")
-    remote_file.close()
+    # Usamos 'with' para asegurar que el archivo se cierre automáticamente
+    with open(txt_file_path, 'r') as remote_file:
+        # Leemos todas las líneas
+        lines = remote_file.readlines()
+        
+        # Verificamos si hay contenido real (eliminando espacios y saltos de línea)
+        # join(lines).strip() devuelve vacío si todo son espacios o saltos
+        if "".join(lines).strip():
+            data_to_send = ["800" + line.strip('\n') for line in lines]
+            data_to_send.append("810Fin del documento.")
+        else:
+            # Si está vacío o solo tiene espacios, data_to_send se queda como []
+            data_to_send = []
 
     return jsonify({
         'exists': bool(data_to_send),
