@@ -34,40 +34,93 @@ def get_txt_file():
 
 @app.route('/api/check_txt_file', methods=['POST'])
 def check_txt_file():
-    form = request.form.copy()
-    folder_path = request.json['pathToTxt']
-    # Obtener lista de archivos en la carpeta remota
-    files_in_folder = os.listdir(folder_path)
+    """Contenido del ÚNICO .txt de la carpeta, con su identidad y tamaño.
 
-    # Filtrar archivos que sean archivos de texto
+    TRES CAMBIOS (2026-09-12), a raíz de «cierres que salen incompletos»:
+
+    1. Las salidas de error ahora incluyen `exists: False` y `motivo`. Antes
+       devolvían sólo {'status','message'}: el POS lee `data.exists`, que salía
+       `undefined` (falso), así que su sondeo seguía esperando hasta agotar los
+       60 s y la cajera veía «tiempo de espera agotado» cuando el problema real
+       era que había CERO o DOS archivos en la carpeta. Un timeout mudo en vez
+       del motivo.
+
+       Ojo con el caso de los dos archivos, que no es teórico: `clear_txt_file`
+       mueve el cierre al respaldo y RECREA uno vacío con el mismo nombre. Si el
+       VPOS escribe el siguiente cierre con OTRO nombre (por fecha, por caja),
+       la carpeta pasa a tener dos .txt y este endpoint fallaba en silencio.
+
+    2. Se devuelve `file_name`, `file_path`, `size` y `mtime`. El POS sondea
+       este endpoint pasando una CARPETA pero después lee el archivo por otra
+       vía (`get_txt_file` con la ruta que le dio el VPOS), así que validaba una
+       cosa y leía otra. Con la ruta resuelta aquí puede leer exactamente lo que
+       comprobó.
+
+    3. `size`/`mtime` permiten detectar un archivo aún EN ESCRITURA. El datáfono
+       escribe el cierre de forma asíncrona y el manual de Megasoft
+       (MAET-VPOSW-00) no ofrece tamaño, marca de fin ni confirmación: un
+       archivo recién creado ya «existe» desde su primer byte. El POS compara
+       lecturas consecutivas y sólo acepta el archivo cuando deja de cambiar.
+
+    Todo lo añadido es ADITIVO: `exists` y `data` conservan su significado, así
+    que un POS viejo contra un demonio nuevo se comporta igual que antes.
+    """
+    folder_path = request.json['pathToTxt']
+
+    try:
+        files_in_folder = os.listdir(folder_path)
+    except OSError as error:
+        return jsonify({
+            'exists': False,
+            'data': [],
+            'status': 'error',
+            'motivo': 'carpeta_inaccesible',
+            'message': 'No se pudo leer la carpeta %s: %s' % (folder_path, error),
+        })
+
     txt_files = [file for file in files_in_folder if file.endswith('.txt')]
 
-    # Verificar si hay exactamente un archivo de texto en la carpeta
     if len(txt_files) != 1:
-        return jsonify({'status': 'error', 'message': 'No se encontró un único archivo TXT en la carpeta.'})
+        return jsonify({
+            'exists': False,
+            'data': [],
+            'status': 'error',
+            'motivo': 'cero_archivos' if not txt_files else 'varios_archivos',
+            'archivos': txt_files,
+            'message': 'No se encontró un único archivo TXT en la carpeta. '
+                       'Encontrados: %d (%s)' % (len(txt_files), ', '.join(txt_files) or 'ninguno'),
+        })
 
-    # Construir la ruta completa del archivo TXT
     txt_file_path = os.path.join(folder_path, txt_files[0])
-    data_to_send = []
-    
-    # Abrir el archivo TXT y leer su contenido
-    # Usamos 'with' para asegurar que el archivo se cierre automáticamente
-    with open(txt_file_path, 'r') as remote_file:
-        # Leemos todas las líneas
-        lines = remote_file.readlines()
-        
-        # Verificamos si hay contenido real (eliminando espacios y saltos de línea)
-        # join(lines).strip() devuelve vacío si todo son espacios o saltos
-        if "".join(lines).strip():
-            data_to_send = ["800" + line.strip('\n') for line in lines]
-            data_to_send.append("810Fin del documento.")
-        else:
-            # Si está vacío o solo tiene espacios, data_to_send se queda como []
-            data_to_send = []
+
+    try:
+        estado = os.stat(txt_file_path)
+        with open(txt_file_path, 'r') as remote_file:
+            lines = remote_file.readlines()
+    except OSError as error:
+        return jsonify({
+            'exists': False,
+            'data': [],
+            'status': 'error',
+            'motivo': 'archivo_ilegible',
+            'message': 'No se pudo leer %s: %s' % (txt_file_path, error),
+        })
+
+    # Un archivo vacío o sólo con espacios NO es un cierre: se informa como
+    # inexistente para que el POS siga esperando en vez de imprimir nada.
+    if "".join(lines).strip():
+        data_to_send = ["800" + line.strip('\n') for line in lines]
+        data_to_send.append("810Fin del documento.")
+    else:
+        data_to_send = []
 
     return jsonify({
         'exists': bool(data_to_send),
-        'data': data_to_send
+        'data': data_to_send,
+        'file_name': txt_files[0],
+        'file_path': txt_file_path,
+        'size': estado.st_size,
+        'mtime': estado.st_mtime,
     })
 
 @app.route('/api/check_last_txt_file', methods=['POST'])
