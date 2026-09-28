@@ -1,6 +1,6 @@
 # AUDIT — hw_megasoft_deamon
 
-STATUS: OPEN · last-audited: 2026-09-12
+STATUS: OPEN · last-audited: 2026-09-28
 
 Servicio Flask local (`127.0.0.1:8087`) instalado como servicio de Windows con
 NSSM en cada caja. Es el puente entre el POS de Odoo y el VPOS de Megasoft
@@ -101,10 +101,26 @@ truncado. Tres fallos corregidos:
   Ahora acepta `expected_sha1` y se niega si no coincide, y se niega también si
   hay un escritor activo.
 
-**Sigue abierto:** recrear el `.txt` vacío con el mismo nombre es el origen del
-caso `varios_archivos` — si el VPOS nombra el siguiente cierre de otra forma, la
-carpeta queda con dos `.txt` y `check_txt_file` se niega. No se cambia a ciegas:
-hay que saber primero si el VPOS necesita que el archivo exista.
+**Resuelto sin quitar el vacío (2026-09-28, QA del PR #1624 de gleiros):**
+recrear el `.txt` vacío con el mismo nombre era el origen del caso
+`varios_archivos`. Pasó en la Caja 11 de staging: tras archivar el residuo del
+24-09 quedó `…_20260924.txt` vacío, el cierre de hoy llegó como `…_20260928.txt`
+y `check_txt_file` se negó; el POS no encontró el comprobante de un lote YA
+cerrado. Ahora `_un_solo_txt` **no cuenta los `.txt` vacíos** (0 bytes o sólo
+espacios, la misma definición que `_comandos`):
+
+- uno con contenido y el resto vacíos → ése (`check_txt_file` añade
+  `vacios_ignorados`);
+- dos o más con contenido → `varios_archivos`, como siempre (nunca se elige);
+- un archivo ilegible NO se da por vacío (podría ser un cierre);
+- un único `.txt` vacío → como siempre; varios y todos vacíos → `solo_vacios`
+  (`clear_txt_file` no archiva ninguno);
+- los errores llevan también `vacios`.
+
+El vacío se **sigue recreando y no se borra nada**: sigue sin saberse si el VPOS
+necesita que el archivo exista, e ignorarlo no destruye nada. Aditivo: un POS
+viejo ve lo mismo salvo que ahora encuentra el comprobante.
+Pruebas: `test_carpeta_cierres.py`.
 
 ### 3. `get_txt_file` — lee cualquier ruta
 
@@ -170,13 +186,19 @@ endpoints leen `request.json`, y da por bueno un 200 contra rutas que no
 existen en la máquina de pruebas. Arreglarlo es trabajo aparte y no se ha hecho.
 La verificación de estos cambios es lectura de código; falta la prueba en caja.
 
+`test_carpeta_cierres.py` (2026-09-28) sí prueba: carpeta temporal real y el
+cliente de Flask con JSON, como el POS. `python -m unittest test_carpeta_cierres -v`
+(hace falta `flask` y `flask-cors`; fuera de Windows, `en_escritura` es `None`).
+
 ---
 
 ## Decisiones pendientes del dueño
 
 1. Arreglar `%TASK_NAME%` en `CreateTaskRestartVposRest.bat` y desplegar el .bat.
 2. Que el POS deje de mostrar «servicio reiniciado» sin mirar la respuesta.
-3. ¿Se puede dejar de recrear el `.txt` vacío en `clear_txt_file`?
+3. ~~¿Se puede dejar de recrear el `.txt` vacío en `clear_txt_file`?~~ Ya no hace
+   falta para el caso `varios_archivos`: los vacíos se ignoran (2026-09-28). Sigue
+   abierto sólo si se quiere dejar la carpeta limpia.
 4. Acotar rutas de `get_txt_file` y restringir CORS.
 5. Registrar los cierres en `megasoft_transaction`.
 6. Recoger `last_line` de cierres buenos para asertar el terminador.
