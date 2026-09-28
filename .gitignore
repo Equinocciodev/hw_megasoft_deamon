@@ -16,3 +16,4 @@
 # Generated files
 .idea/**/contentModel.xml
 __pycache__/
+logs/

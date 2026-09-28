@@ -75,7 +75,7 @@ def _comandos(texto):
     """
     if not texto.strip():
         return []
-    datos = ["800" + linea.strip('\n') for linea in texto.splitlines(keepends=True)]
+    datos = ["800" + linea.rstrip('\r\n') for linea in texto.splitlines(keepends=True)]
     datos.append("810Fin del documento.")
     return datos
 
@@ -106,8 +106,41 @@ def _escritor_activo(path):
     return False
 
 
+def _esta_vacio(path):
+    """¿El .txt no tiene contenido? (0 bytes, o sólo espacios / saltos de línea).
+
+    Misma definición que `_comandos`: un archivo que `check_txt_file`
+    contestaría con `exists: False`. Si no se puede leer, NO se da por vacío:
+    un archivo ilegible puede ser un cierre, y descartarlo sería elegir a ciegas.
+    """
+    try:
+        if os.path.getsize(path) == 0:
+            return True
+        return not _leer(path)['texto'].strip()
+    except OSError:
+        return False
+
+
 def _un_solo_txt(folder_path):
-    """(ruta, None) o (None, respuesta_de_error) para la carpeta dada."""
+    """(ruta, None) o (None, respuesta_de_error) para la carpeta dada.
+
+    Los .txt VACÍOS no cuentan (QA del PR #1624 de gleiros, 28-09-2026;
+    decisión pendiente n.º 3 del AUDIT). `clear_txt_file` recrea un vacío con
+    el nombre del cierre archivado; si el VPOS escribe el siguiente con OTRO
+    nombre (lleva la fecha), antes quedaban dos .txt y esto se negaba: el POS no
+    encontraba el comprobante de un lote YA cerrado (Caja 11 de staging). Ahora:
+
+      · exactamente UNO con contenido → ése (los vacíos van en
+        `vacios_ignorados`, para el log y el diagnóstico);
+      · dos o más con contenido → `varios_archivos`, como siempre: NUNCA se
+        elige entre dos comprobantes;
+      · un único .txt y vacío → ése, como siempre (`exists: False`);
+      · varios y todos vacíos → `solo_vacios`: no hay comprobante, y
+        `clear_txt_file` no archiva ninguno.
+
+    Los vacíos NO se borran: no se sabe si el VPOS necesita que el archivo
+    exista (por eso se sigue recreando). Ignorarlos no destruye nada.
+    """
     try:
         files_in_folder = os.listdir(folder_path)
     except OSError as error:
@@ -120,22 +153,43 @@ def _un_solo_txt(folder_path):
             'message': 'No se pudo leer la carpeta %s: %s' % (folder_path, error),
         }
 
-    txt_files = [file for file in files_in_folder if file.endswith('.txt')]
+    txt_files = sorted(file for file in files_in_folder if file.endswith('.txt'))
+    if len(txt_files) == 1:
+        return os.path.join(folder_path, txt_files[0]), None
 
-    if len(txt_files) != 1:
-        log.warning('se esperaba 1 .txt en %s, hay %d: %s',
-                    folder_path, len(txt_files), txt_files)
-        return None, {
-            'exists': False,
-            'data': [],
-            'status': 'error',
-            'motivo': 'cero_archivos' if not txt_files else 'varios_archivos',
-            'archivos': txt_files,
-            'message': 'No se encontró un único archivo TXT en la carpeta. '
-                       'Encontrados: %d (%s)' % (len(txt_files), ', '.join(txt_files) or 'ninguno'),
-        }
+    vacios = [f for f in txt_files if _esta_vacio(os.path.join(folder_path, f))]
+    con_contenido = [f for f in txt_files if f not in vacios]
+    if len(con_contenido) == 1:
+        if vacios:
+            log.info('%s: se ignoran %d .txt vacíos: %s', folder_path, len(vacios), vacios)
+        return os.path.join(folder_path, con_contenido[0]), None
 
-    return os.path.join(folder_path, txt_files[0]), None
+    if txt_files and not con_contenido:
+        motivo = 'solo_vacios'
+    else:
+        motivo = 'cero_archivos' if not txt_files else 'varios_archivos'
+    log.warning('se esperaba 1 .txt con contenido en %s, hay %d (%d vacíos): %s',
+                folder_path, len(con_contenido), len(vacios), txt_files)
+    return None, {
+        'exists': False,
+        'data': [],
+        'status': 'error',
+        'motivo': motivo,
+        'archivos': txt_files,
+        'vacios': vacios,
+        'message': 'No se encontró un único archivo TXT en la carpeta. '
+                   'Encontrados: %d (%s)' % (len(txt_files), ', '.join(txt_files) or 'ninguno'),
+    }
+
+
+def _vacios_junto_a(txt_file_path):
+    """Los .txt vacíos que `_un_solo_txt` dejó de lado junto a este archivo."""
+    carpeta, nombre = os.path.split(txt_file_path)
+    try:
+        otros = sorted(f for f in os.listdir(carpeta) if f.endswith('.txt') and f != nombre)
+    except OSError:
+        return []
+    return [f for f in otros if _esta_vacio(os.path.join(carpeta, f))]
 
 
 @app.route('/', methods=['GET'])
@@ -227,6 +281,7 @@ def check_txt_file():
         'line_count': len(lineas),
         'last_line': lineas[-1] if lineas else '',
         'en_escritura': _escritor_activo(txt_file_path),
+        'vacios_ignorados': _vacios_junto_a(txt_file_path),
     })
 
 
