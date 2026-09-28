@@ -168,6 +168,11 @@ Complementario y **pendiente**: los cierres no se registran en Odoo.
   los 60 s sin decir por qué. Ahora se lee en binario y se decodifica `cp1252`
   con `errors='replace'`, que no puede fallar. Cubre además el archivo capturado
   a media escritura, que puede terminar en una secuencia multibyte partida.
+- **CRLF (2026-09-28).** Al pasar a leer en binario (1ef7e3e), `_comandos`
+  sólo quitaba el `\n` y cada comando salía con un `\r` colgando (los `.txt`
+  del VPOS son de Windows). El desplegado (19747f4) abría en modo texto y no lo
+  tenía. Ahora `rstrip('\r\n')`: los comandos vuelven a ser los de siempre.
+  Hallado al escribir `test_carpeta_cierres.py` (`FinDeLineaWindows`).
 - **`check_last_txt_file` y `get_lasts_txt`** tenían cero manejo de errores:
   cualquier problema de carpeta era un 500. Ahora devuelven `motivo`.
 - **`request.json['x']`** lanzaba `KeyError` → 500 si faltaba el campo. Ahora

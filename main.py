@@ -75,7 +75,7 @@ def _comandos(texto):
     """
     if not texto.strip():
         return []
-    datos = ["800" + linea.strip('\n') for linea in texto.splitlines(keepends=True)]
+    datos = ["800" + linea.rstrip('\r\n') for linea in texto.splitlines(keepends=True)]
     datos.append("810Fin del documento.")
     return datos
 

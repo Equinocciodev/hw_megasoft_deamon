@@ -137,3 +137,32 @@ class CarpetaDeCierres(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FinDeLineaWindows(unittest.TestCase):
+    """El VPOS corre en Windows: sus .txt terminan las líneas en CRLF.
+
+    El demonio desplegado (19747f4) abría en modo texto y Python convertía CRLF
+    en LF, así que el POS recibía `800CIERRE: …` limpio. 1ef7e3e pasó a leer en
+    BINARIO (bien: no puede fallar por codificación) pero `_comandos` sólo
+    quitaba el `\\n`: cada comando llegaba a la impresora fiscal con un `\\r`
+    colgando, y el POS comparaba/buscaba líneas con ese `\\r`.
+    """
+
+    def setUp(self):
+        self.carpeta = tempfile.mkdtemp(prefix='cierres ')
+        self.addCleanup(shutil.rmtree, self.carpeta, True)
+        self.ruta = os.path.join(self.carpeta, HOY)
+        with open(self.ruta, 'wb') as fh:
+            fh.write(b'REPORTE DE CIERRE\r\nCIERRE: 28/09/2026 12:19:02\r\nTotal 0012 245.310,00 VES\r\n')
+        self.cliente = app.test_client()
+
+    def test_check_txt_file_sin_retorno_de_carro(self):
+        datos = self.cliente.post('/api/check_txt_file', json={'pathToTxt': self.carpeta}).get_json()
+        self.assertEqual(datos['data'], ['800REPORTE DE CIERRE', '800CIERRE: 28/09/2026 12:19:02',
+                                         '800Total 0012 245.310,00 VES', '810Fin del documento.'])
+
+    def test_get_txt_file_sin_retorno_de_carro(self):
+        datos = self.cliente.post('/api/get_txt_file', json={'pathToTxt': self.ruta}).get_json()
+        self.assertFalse(any('\r' in comando for comando in datos), datos)
+        self.assertEqual(datos[1], '800CIERRE: 28/09/2026 12:19:02')
